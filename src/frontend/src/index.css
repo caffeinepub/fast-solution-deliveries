@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+    --background: 0.99 0 0;
+    --foreground: 0.14 0 0;
+    --card: 1 0 0;
+    --card-foreground: 0.14 0 0;
+    --popover: 1 0 0;
+    --popover-foreground: 0.14 0 0;
+    --primary: 0.65 0.21 40;
+    --primary-foreground: 1 0 0;
+    --secondary: 0.96 0.01 40;
+    --secondary-foreground: 0.14 0 0;
+    --muted: 0.96 0 0;
+    --muted-foreground: 0.5 0 0;
+    --accent: 0.96 0.02 40;
+    --accent-foreground: 0.14 0 0;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 1 0 0;
+    --border: 0.91 0 0;
+    --input: 0.91 0 0;
+    --ring: 0.65 0.21 40;
+    --chart-1: 0.65 0.21 40;
+    --chart-2: 0.6 0.118 184.704;
+    --chart-3: 0.398 0.07 227.392;
+    --chart-4: 0.828 0.189 84.429;
+    --chart-5: 0.769 0.188 70.08;
+    --sidebar: 0.985 0 0;
+    --sidebar-foreground: 0.145 0 0;
+    --sidebar-primary: 0.65 0.21 40;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.97 0 0;
+    --sidebar-accent-foreground: 0.205 0 0;
+    --sidebar-border: 0.922 0 0;
+    --sidebar-ring: 0.65 0.21 40;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+}
+
+@keyframes rider-move {
+  0% {
+    transform: translate(50px, 160px);
+  }
+  25% {
+    transform: translate(120px, 100px);
+  }
+  50% {
+    transform: translate(200px, 70px);
+  }
+  75% {
+    transform: translate(270px, 50px);
+  }
+  100% {
+    transform: translate(310px, 40px);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.4);
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.rider-dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff6b00;
+  border: 2px solid white;
+  box-shadow: 0 0 10px rgba(255, 107, 0, 0.7);
+  animation: rider-move 6s ease-in-out infinite alternate, pulse-dot 1.5s
+    ease-in-out infinite;
+  top: 0;
+  left: 0;
+}
+
+.status-blink {
+  animation: blink 1.2s ease-in-out infinite;
+}
