@@ -5,6 +5,7 @@ import BookingConfirmation from "./screens/BookingConfirmation";
 import CustomerHome from "./screens/CustomerHome";
 import OrderHistory from "./screens/OrderHistory";
 import OrderTracking from "./screens/OrderTracking";
+import PaymentScreen from "./screens/PaymentScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import ReviewsScreen from "./screens/ReviewsScreen";
 import RiderDashboard from "./screens/RiderDashboard";
@@ -37,6 +38,10 @@ export default function App() {
 
   const handleBookingConfirm = (b: BookingData) => {
     setBooking(b);
+    navigate("payment");
+  };
+
+  const handlePaymentDone = () => {
     navigate("booking-confirm");
   };
 
@@ -71,6 +76,13 @@ export default function App() {
         <CustomerHome
           user={user}
           onBook={handleBookingConfirm}
+          onNav={navigate}
+        />
+      )}
+      {screen === "payment" && booking && (
+        <PaymentScreen
+          booking={booking}
+          onPaid={handlePaymentDone}
           onNav={navigate}
         />
       )}

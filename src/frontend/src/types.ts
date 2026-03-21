@@ -3,6 +3,7 @@ export type Screen =
   | "role"
   | "auth"
   | "customer-home"
+  | "payment"
   | "booking-confirm"
   | "order-tracking"
   | "order-history"

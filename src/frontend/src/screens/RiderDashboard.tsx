@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { motion } from "motion/react";
 import { useState } from "react";
@@ -100,6 +99,9 @@ const DELIVERY_ICONS: Record<string, string> = {
   courier: "📦",
 };
 
+// 90% rider share
+const riderShare = (amount: number) => Math.round(amount * 0.9);
+
 interface Props {
   user: AppUser;
   onOrderSelect: (b: BookingData) => void;
@@ -127,6 +129,13 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
     setPendingOrders((prev) => prev.filter((o) => o.orderId !== orderId));
     toast.info("Order rejected");
   };
+
+  // Earnings (90% rider share)
+  const earnings = [
+    { label: "Today", gross: 480, share: riderShare(480) },
+    { label: "This Week", gross: 2840, share: riderShare(2840) },
+    { label: "Total", gross: 48250, share: riderShare(48250) },
+  ];
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -182,22 +191,38 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
       </div>
 
       <div className="max-w-md mx-auto px-4 py-5 flex flex-col gap-5">
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: "Today", amount: "₹480" },
-            { label: "This Week", amount: "₹2,840" },
-            { label: "Total", amount: "₹48,250" },
-          ].map((e) => (
-            <div
-              key={e.label}
-              className="bg-card border border-border rounded-2xl p-3 text-center"
+        {/* Earnings with 90/10 split */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-sm">Your Earnings</p>
+            <span
+              className="text-xs px-2 py-0.5 rounded-full font-medium"
+              style={{ background: "rgba(255,107,0,0.1)", color: "#FF6B00" }}
             >
-              <p className="font-bold text-lg" style={{ color: "#FF6B00" }}>
-                {e.amount}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">{e.label}</p>
-            </div>
-          ))}
+              90% your share · 10% FSD
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {earnings.map((e) => (
+              <div
+                key={e.label}
+                className="bg-card border border-border rounded-2xl p-3 text-center"
+              >
+                <p className="font-bold text-lg" style={{ color: "#FF6B00" }}>
+                  ₹{e.share.toLocaleString("en-IN")}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {e.label}
+                </p>
+                <p className="text-xs text-muted-foreground/60 mt-0.5">
+                  of ₹{e.gross.toLocaleString("en-IN")}
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            💡 You earn 90% of each delivery fee. FSD retains 10% as commission.
+          </p>
         </div>
 
         <div>
@@ -262,9 +287,14 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
                       {order.courierSubType &&
                         ` · ${order.courierSubType} courier`}
                     </span>
-                    <span className="font-bold" style={{ color: "#FF6B00" }}>
-                      ₹{order.price}
-                    </span>
+                    <div className="text-right">
+                      <span className="font-bold" style={{ color: "#FF6B00" }}>
+                        ₹{riderShare(order.price)}
+                      </span>
+                      <span className="text-xs text-muted-foreground block">
+                        your 90%
+                      </span>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <Button
