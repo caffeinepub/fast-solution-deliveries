@@ -12,7 +12,18 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import BottomNav from "../components/BottomNav";
-import type { AppUser, BookingData, DeliveryType, Screen } from "../types";
+import type {
+  AppUser,
+  BookingData,
+  CourierSubType,
+  DeliverySpeed,
+  DeliveryType,
+  Screen,
+} from "../types";
+import {
+  type DistanceResult,
+  estimateSmartDistance,
+} from "../utils/distanceEstimator";
 
 const CITIES = [
   "Delhi",
@@ -33,28 +44,22 @@ const DELIVERY_TYPES: {
   desc: string;
   range: string;
   price: string;
-  minKm: number;
-  maxKm: number;
 }[] = [
   {
     id: "walking",
     label: "Walking",
     icon: "🚶",
     desc: "Doorstep pickup & delivery",
-    range: "Up to 1 km",
-    price: "₹20–₹40",
-    minKm: 0,
-    maxKm: 1,
+    range: "1–80 km",
+    price: "₹20–₹130",
   },
   {
     id: "bike",
     label: "Bike",
     icon: "🏍️",
     desc: "Door-to-door service",
-    range: "1–60 km",
-    price: "₹50–₹150",
-    minKm: 1,
-    maxKm: 60,
+    range: "Any distance",
+    price: "₹7–₹15/km",
   },
   {
     id: "metro",
@@ -62,9 +67,7 @@ const DELIVERY_TYPES: {
     icon: "🚇",
     desc: "Station-to-station only",
     range: "Long distance",
-    price: "₹40–₹120",
-    minKm: 1,
-    maxKm: 60,
+    price: "₹30–₹300",
   },
   {
     id: "bus",
@@ -72,27 +75,77 @@ const DELIVERY_TYPES: {
     icon: "🚌",
     desc: "Between bus stops",
     range: "Intercity",
-    price: "₹60–₹180",
-    minKm: 1,
-    maxKm: 60,
+    price: "₹50–₹80",
+  },
+  {
+    id: "courier",
+    label: "Courier",
+    icon: "📦",
+    desc: "Scheduled courier service",
+    range: "Any distance",
+    price: "₹10–₹20",
   },
 ];
 
-function calcPrice(
+// Auto-detect courier sub-type based on weight per parcel and total count
+function autoDetectCourierType(
+  weight: number,
+  count: number,
+): { subType: CourierSubType; reason: string } {
+  const weightPerParcel = weight / count;
+  if (weight > 10 || count >= 5 || weightPerParcel > 3) {
+    return {
+      subType: "bulk",
+      reason:
+        count >= 5
+          ? `${count} parcels → Bulk Courier`
+          : weight > 10
+            ? `${weight} kg total → Bulk Courier`
+            : `${weightPerParcel.toFixed(1)} kg/parcel → Bulk Courier`,
+    };
+  }
+  return {
+    subType: "normal",
+    reason:
+      count === 1
+        ? "Single parcel → Normal Courier"
+        : `${count} parcels, ${weight} kg → Normal Courier`,
+  };
+}
+
+// Weight surcharge only applies above 5 kg
+function calcWeightSurcharge(weight: number): number {
+  if (weight <= 5) return 0;
+  return Math.round((weight - 5) * 5);
+}
+
+// Time surcharge: scales with distance, max ₹10
+function calcTimeSurcharge(distance: number): number {
+  if (distance <= 10) return 0;
+  return Math.min(10, Math.round((distance - 10) * 0.3));
+}
+
+function calcBaseCharge(
   type: DeliveryType,
   distance: number,
-  weight: number,
+  courierSubType?: CourierSubType,
 ): number {
-  const weightCharge = Math.max(0, weight - 1) * 10;
   switch (type) {
     case "walking":
-      return Math.min(40, Math.max(20, 20 + distance * 15)) + weightCharge;
+      if (distance <= 20) return Math.min(40, Math.max(20, 20 + distance * 1));
+      return Math.min(130, Math.max(40, 40 + (distance - 20) * 3));
     case "bike":
-      return Math.min(150, Math.max(50, 50 + distance * 2.5)) + weightCharge;
+      return Math.round(
+        Math.max(7, Math.min(15, 7 + distance * 0.1)) * distance,
+      );
     case "metro":
-      return Math.min(120, Math.max(40, 40 + distance * 1.8)) + weightCharge;
+      return Math.min(300, Math.max(30, 30 + distance * 4.5));
     case "bus":
-      return Math.min(180, Math.max(60, 60 + distance * 2)) + weightCharge;
+      return Math.min(80, Math.max(50, 50 + distance * 0.6));
+    case "courier":
+      if (courierSubType === "bulk")
+        return Math.min(20, Math.max(15, 15 + distance * 0.05));
+      return Math.min(14, Math.max(10, 10 + distance * 0.04));
   }
 }
 
@@ -108,38 +161,72 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
   const [drop, setDrop] = useState("");
   const [description, setDescription] = useState("");
   const [weight, setWeight] = useState("1");
+  const [parcelCount, setParcelCount] = useState(1);
   const [distance, setDistance] = useState<number | null>(null);
+  const [distanceResult, setDistanceResult] = useState<DistanceResult | null>(
+    null,
+  );
   const [selectedType, setSelectedType] = useState<DeliveryType | null>(null);
+  const [courierSubType, setCourierSubType] =
+    useState<CourierSubType>("normal");
+  const [deliverySpeed, setDeliverySpeed] = useState<DeliverySpeed>("slow");
+
+  const weightNum = Number.parseFloat(weight) || 1;
+
+  // When courier is selected, auto-detect sub-type from weight + count
+  const autoDetected =
+    selectedType === "courier"
+      ? autoDetectCourierType(weightNum, parcelCount)
+      : null;
+  const effectiveCourierSubType = autoDetected
+    ? autoDetected.subType
+    : courierSubType;
 
   const estimateDistance = () => {
     if (!pickup || !drop) {
       toast.error("Enter pickup and drop locations first");
       return;
     }
-    const d = Number.parseFloat((Math.random() * 59.5 + 0.5).toFixed(1));
-    setDistance(d);
+    const result = estimateSmartDistance(pickup, drop);
+    setDistance(result.distance);
+    setDistanceResult(result);
     setSelectedType(null);
-    toast.success(`Estimated distance: ${d} km`);
+
+    if (result.confidence === "high") {
+      toast.success(
+        `AI matched: ${result.pickupArea} → ${result.dropArea} — ${result.distance} km (road distance)`,
+      );
+    } else if (result.confidence === "medium") {
+      toast.info(`Partial match — estimated ${result.distance} km`);
+    } else {
+      toast.warning(
+        `Could not identify areas — rough estimate: ${result.distance} km`,
+      );
+    }
   };
 
-  const price =
+  const weightSurcharge = calcWeightSurcharge(weightNum);
+  const timeSurcharge = distance !== null ? calcTimeSurcharge(distance) : 0;
+  const fastCharge = deliverySpeed === "fast" ? 5 : 0;
+
+  const singleBaseCharge =
     selectedType && distance !== null
       ? Math.round(
-          calcPrice(selectedType, distance, Number.parseFloat(weight) || 1),
+          calcBaseCharge(
+            selectedType,
+            distance,
+            selectedType === "courier" ? effectiveCourierSubType : undefined,
+          ),
         )
       : null;
 
   const baseCharge =
-    selectedType && distance !== null
-      ? Math.round(
-          calcPrice(selectedType, distance, 1) -
-            Math.max(0, (Number.parseFloat(weight) || 1) - 1) * 10,
-        )
-      : null;
+    singleBaseCharge !== null ? singleBaseCharge * parcelCount : null;
 
-  const weightCharge = selectedType
-    ? Math.round(Math.max(0, (Number.parseFloat(weight) || 1) - 1) * 10)
-    : null;
+  const price =
+    baseCharge !== null
+      ? baseCharge + weightSurcharge + timeSurcharge + fastCharge
+      : null;
 
   const handleBook = () => {
     if (!city) {
@@ -155,16 +242,11 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
       return;
     }
     if (distance === null) {
-      toast.error("Click Estimate Distance first");
+      toast.error("Click AI Distance Estimate first");
       return;
     }
     if (!selectedType) {
       toast.error("Select a delivery type");
-      return;
-    }
-
-    if (selectedType === "walking" && distance > 1) {
-      toast.error("Walking delivery only available up to 1 km");
       return;
     }
 
@@ -175,15 +257,35 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
       pickup,
       drop,
       description: description || "General parcel",
-      weight: Number.parseFloat(weight) || 1,
+      weight: weightNum,
+      parcelCount,
       distance,
       deliveryType: selectedType,
+      courierSubType:
+        selectedType === "courier" ? effectiveCourierSubType : undefined,
+      deliverySpeed,
       price: price!,
+      baseCharge: baseCharge!,
+      weightSurcharge,
+      timeSurcharge,
+      fastCharge,
       status: "placed",
       riderName: "Rahul Verma",
       riderPhone: "9876543210",
     });
   };
+
+  const confidenceBadge = distanceResult ? (
+    distanceResult.confidence === "high" ? (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+        ✅ AI Matched
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+        ⚠️ Estimated
+      </span>
+    )
+  ) : null;
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -232,7 +334,7 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
                 data-ocid="home.pickup.input"
                 value={pickup}
                 onChange={(e) => setPickup(e.target.value)}
-                placeholder="Enter pickup address"
+                placeholder="e.g. Connaught Place, Karol Bagh…"
                 className="mt-1 border-0 p-0 h-auto text-sm focus-visible:ring-0 bg-transparent"
               />
             </div>
@@ -248,13 +350,17 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
                 data-ocid="home.drop.input"
                 value={drop}
                 onChange={(e) => setDrop(e.target.value)}
-                placeholder="Enter delivery address"
+                placeholder="e.g. Saket, Noida Sector 18…"
                 className="mt-1 border-0 p-0 h-auto text-sm focus-visible:ring-0 bg-transparent"
               />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground ml-6">
+            🤖 Type area names for AI-accurate distance
+          </p>
         </div>
 
+        {/* Parcel details row */}
         <div className="flex gap-3">
           <div className="flex-1">
             <Label className="text-sm font-semibold">Parcel Description</Label>
@@ -281,66 +387,243 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
           </div>
         </div>
 
+        {/* Parcel / Courier quantity selector */}
+        <div>
+          <Label className="text-sm font-semibold">Number of Parcels</Label>
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => setParcelCount((c) => Math.max(1, c - 1))}
+              className="w-10 h-10 rounded-full border-2 border-orange-400 text-orange-600 text-xl font-bold flex items-center justify-center hover:bg-orange-50 transition-colors"
+            >
+              −
+            </button>
+            <div className="flex-1 text-center">
+              <span className="text-2xl font-bold text-foreground">
+                {parcelCount}
+              </span>
+              <p className="text-xs text-muted-foreground">
+                {parcelCount === 1 ? "parcel" : "parcels"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setParcelCount((c) => Math.min(50, c + 1))}
+              className="w-10 h-10 rounded-full border-2 border-orange-400 text-orange-600 text-xl font-bold flex items-center justify-center hover:bg-orange-50 transition-colors"
+            >
+              +
+            </button>
+          </div>
+          {parcelCount > 1 && (
+            <p className="text-xs text-muted-foreground text-center mt-1">
+              Total weight: {weightNum * parcelCount} kg across {parcelCount}{" "}
+              parcels
+            </p>
+          )}
+        </div>
+
+        {weightNum > 5 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-xs text-amber-700">
+            ⚠️ Weight surcharge applies for parcels over 5 kg: +₹
+            {weightSurcharge}
+          </div>
+        )}
+
         <Button
           data-ocid="home.estimate.button"
           onClick={estimateDistance}
           variant="outline"
           className="w-full rounded-full border-orange-300 text-orange-600 hover:bg-orange-50"
         >
-          📍 Estimate Distance
+          🤖 AI Distance Estimate
         </Button>
 
-        {distance !== null && (
+        {distance !== null && distanceResult && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-center"
+            className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3"
           >
-            <span className="text-sm font-semibold text-orange-700">
-              📏 Estimated distance: {distance} km
-            </span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-semibold text-orange-700">
+                📏 {distance} km
+              </span>
+              {confidenceBadge}
+            </div>
+            {distanceResult.confidence === "high" &&
+              distanceResult.pickupArea &&
+              distanceResult.dropArea && (
+                <p className="text-xs text-green-700 mt-1">
+                  {distanceResult.pickupArea} → {distanceResult.dropArea}
+                </p>
+              )}
+            {distanceResult.confidence !== "high" && (
+              <p className="text-xs text-amber-600 mt-1">
+                ⚠️ Area not fully identified — please verify distance manually
+              </p>
+            )}
           </motion.div>
         )}
 
         {distance !== null && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <Label className="text-sm font-semibold">
-              Select Delivery Type
-            </Label>
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              {DELIVERY_TYPES.map((dt) => {
-                const disabled = dt.id === "walking" && distance > 1;
-                const active = selectedType === dt.id;
-                return (
-                  <button
-                    type="button"
-                    key={dt.id}
-                    data-ocid={`home.${dt.id}.button`}
-                    disabled={disabled}
-                    onClick={() => !disabled && setSelectedType(dt.id)}
-                    className={`p-4 rounded-2xl border-2 text-left transition-all ${
-                      active
-                        ? "border-orange-500 bg-orange-50"
-                        : disabled
-                          ? "border-border bg-muted opacity-50 cursor-not-allowed"
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-col gap-4"
+          >
+            <div>
+              <Label className="text-sm font-semibold">
+                Select Delivery Type
+              </Label>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                {DELIVERY_TYPES.map((dt) => {
+                  const active = selectedType === dt.id;
+                  return (
+                    <button
+                      type="button"
+                      key={dt.id}
+                      data-ocid={`home.${dt.id}.button`}
+                      onClick={() => setSelectedType(dt.id)}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                        active
+                          ? "border-orange-500 bg-orange-50"
                           : "border-border bg-card hover:border-orange-300"
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">{dt.icon}</div>
-                    <p className="font-semibold text-sm">{dt.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {dt.desc}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{dt.range}</p>
-                    <p
-                      className="text-sm font-bold mt-2"
-                      style={{ color: "#FF6B00" }}
+                      }`}
                     >
-                      {dt.price}
+                      <div className="text-2xl mb-2">{dt.icon}</div>
+                      <p className="font-semibold text-sm">{dt.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {dt.desc}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {dt.range}
+                      </p>
+                      <p
+                        className="text-sm font-bold mt-2"
+                        style={{ color: "#FF6B00" }}
+                      >
+                        {dt.price}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Courier: auto-detected type shown as info, manual override still available */}
+            {selectedType === "courier" && autoDetected && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <Label className="text-sm font-semibold">Courier Type</Label>
+                <div
+                  className={`mt-2 rounded-2xl border-2 p-3 flex items-center gap-3 ${
+                    autoDetected.subType === "bulk"
+                      ? "border-orange-400 bg-orange-50"
+                      : "border-green-400 bg-green-50"
+                  }`}
+                >
+                  <span className="text-2xl">
+                    {autoDetected.subType === "bulk" ? "📦" : "📄"}
+                  </span>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm">
+                      {autoDetected.subType === "bulk"
+                        ? "Bulk Courier (Auto)"
+                        : "Normal Courier (Auto)"}
                     </p>
-                  </button>
-                );
-              })}
+                    <p className="text-xs text-muted-foreground">
+                      {autoDetected.reason}
+                    </p>
+                  </div>
+                  <span
+                    className="text-sm font-bold"
+                    style={{ color: "#FF6B00" }}
+                  >
+                    {autoDetected.subType === "bulk" ? "₹15–₹20" : "₹10–₹14"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 ml-1">
+                  Auto-selected based on weight ({weightNum} kg) and parcel
+                  count ({parcelCount}). You can override:
+                </p>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  {[
+                    {
+                      id: "normal" as CourierSubType,
+                      icon: "📄",
+                      label: "Normal",
+                      price: "₹10–₹14",
+                    },
+                    {
+                      id: "bulk" as CourierSubType,
+                      icon: "📦",
+                      label: "Bulk",
+                      price: "₹15–₹20",
+                    },
+                  ].map((ct) => (
+                    <button
+                      type="button"
+                      key={ct.id}
+                      onClick={() => setCourierSubType(ct.id)}
+                      className={`p-3 rounded-xl border-2 text-left transition-all text-xs ${
+                        effectiveCourierSubType === ct.id
+                          ? "border-orange-500 bg-orange-50"
+                          : "border-border bg-card hover:border-orange-300"
+                      }`}
+                    >
+                      <span className="text-lg">{ct.icon}</span>
+                      <p className="font-semibold mt-1">{ct.label}</p>
+                      <p style={{ color: "#FF6B00" }} className="font-bold">
+                        {ct.price}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            <div>
+              <Label className="text-sm font-semibold">Delivery Speed</Label>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeliverySpeed("slow")}
+                  className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                    deliverySpeed === "slow"
+                      ? "border-orange-500 bg-orange-50"
+                      : "border-border bg-card hover:border-orange-300"
+                  }`}
+                >
+                  <div className="text-2xl mb-2">🐢</div>
+                  <p className="font-semibold text-sm">Slow Delivery</p>
+                  <p className="text-xs text-muted-foreground">
+                    Standard speed
+                  </p>
+                  <p className="text-sm font-bold mt-1 text-green-600">
+                    No extra charge
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeliverySpeed("fast")}
+                  className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                    deliverySpeed === "fast"
+                      ? "border-orange-500 bg-orange-50"
+                      : "border-border bg-card hover:border-orange-300"
+                  }`}
+                >
+                  <div className="text-2xl mb-2">⚡</div>
+                  <p className="font-semibold text-sm">Fast Delivery</p>
+                  <p className="text-xs text-muted-foreground">
+                    Priority handling
+                  </p>
+                  <p
+                    className="text-sm font-bold mt-1"
+                    style={{ color: "#FF6B00" }}
+                  >
+                    +₹5
+                  </p>
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
@@ -355,16 +638,44 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
             <div className="flex flex-col gap-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
-                  Base + distance charge
+                  Base charge ({selectedType}
+                  {selectedType === "courier"
+                    ? ` · ${effectiveCourierSubType}`
+                    : ""}
+                  )
                 </span>
-                <span>₹{baseCharge}</span>
+                <span>₹{singleBaseCharge}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  Weight surcharge ({weight} kg)
-                </span>
-                <span>₹{weightCharge}</span>
-              </div>
+              {parcelCount > 1 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    × {parcelCount} parcels
+                  </span>
+                  <span>₹{baseCharge}</span>
+                </div>
+              )}
+              {weightSurcharge > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Weight surcharge ({weightNum} kg, over 5 kg)
+                  </span>
+                  <span>₹{weightSurcharge}</span>
+                </div>
+              )}
+              {timeSurcharge > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Long-distance surcharge
+                  </span>
+                  <span>₹{timeSurcharge}</span>
+                </div>
+              )}
+              {fastCharge > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Fast delivery</span>
+                  <span>₹{fastCharge}</span>
+                </div>
+              )}
               <div className="border-t border-border pt-2 flex justify-between font-bold">
                 <span>Total</span>
                 <span style={{ color: "#FF6B00" }}>₹{price}</span>

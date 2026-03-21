@@ -16,9 +16,15 @@ const MOCK_ORDERS: BookingData[] = [
     drop: "Rajouri Garden",
     description: "Medicines",
     weight: 1,
+    parcelCount: 1,
     distance: 4.2,
     deliveryType: "bike",
-    price: 60,
+    deliverySpeed: "fast",
+    price: 65,
+    baseCharge: 60,
+    weightSurcharge: 0,
+    timeSurcharge: 0,
+    fastCharge: 5,
     status: "placed",
     riderName: "",
     riderPhone: "",
@@ -30,9 +36,15 @@ const MOCK_ORDERS: BookingData[] = [
     drop: "Sector 62 Bus Stop",
     description: "Documents",
     weight: 0.5,
+    parcelCount: 1,
     distance: 9,
     deliveryType: "bus",
-    price: 78,
+    deliverySpeed: "slow",
+    price: 55,
+    baseCharge: 55,
+    weightSurcharge: 0,
+    timeSurcharge: 0,
+    fastCharge: 0,
     status: "placed",
     riderName: "",
     riderPhone: "",
@@ -43,10 +55,37 @@ const MOCK_ORDERS: BookingData[] = [
     pickup: "MG Road Metro",
     drop: "IFFCO Chowk Metro",
     description: "Books",
-    weight: 2.5,
+    weight: 6,
+    parcelCount: 1,
     distance: 3.1,
     deliveryType: "metro",
-    price: 71,
+    deliverySpeed: "slow",
+    price: 45,
+    baseCharge: 40,
+    weightSurcharge: 5,
+    timeSurcharge: 0,
+    fastCharge: 0,
+    status: "placed",
+    riderName: "",
+    riderPhone: "",
+  },
+  {
+    orderId: "FSD-501237",
+    city: "Delhi",
+    pickup: "Lajpat Nagar",
+    drop: "Saket",
+    description: "Bulk files",
+    weight: 3,
+    parcelCount: 5,
+    distance: 5.5,
+    deliveryType: "courier",
+    courierSubType: "bulk",
+    deliverySpeed: "slow",
+    price: 85,
+    baseCharge: 85,
+    weightSurcharge: 0,
+    timeSurcharge: 0,
+    fastCharge: 0,
     status: "placed",
     riderName: "",
     riderPhone: "",
@@ -58,6 +97,7 @@ const DELIVERY_ICONS: Record<string, string> = {
   bike: "🏍️",
   metro: "🚇",
   bus: "🚌",
+  courier: "📦",
 };
 
 interface Props {
@@ -68,11 +108,15 @@ interface Props {
 
 export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
   const [isOnline, setIsOnline] = useState(false);
-  const [mode, setMode] = useState<"bike" | "walking" | "metro" | "bus">(
-    "bike",
-  );
   const [pendingOrders, setPendingOrders] =
     useState<BookingData[]>(MOCK_ORDERS);
+
+  const serviceLabel =
+    user.riderVehicleType === "two-wheeler"
+      ? "🏍️ 2-Wheeler Rider"
+      : user.riderServicePreference
+        ? `${DELIVERY_ICONS[user.riderServicePreference]} ${user.riderServicePreference.charAt(0).toUpperCase() + user.riderServicePreference.slice(1)} Rider`
+        : "🚶 Walker/Transit Rider";
 
   const handleAccept = (order: BookingData) => {
     toast.success(`Order ${order.orderId} accepted!`);
@@ -95,7 +139,7 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
             <div>
               <p className="text-white/80 text-sm">Welcome back,</p>
               <h2 className="text-xl font-bold">{user.name}</h2>
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-wrap gap-2 mt-2">
                 {user.aadhaar && (
                   <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-medium">
                     ✓ Aadhaar Verified
@@ -106,6 +150,9 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
                     ✓ PAN Verified
                   </span>
                 )}
+                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-medium">
+                  {serviceLabel}
+                </span>
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -154,28 +201,6 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
         </div>
 
         <div>
-          <Label className="text-sm font-semibold">Delivery Mode</Label>
-          <div className="grid grid-cols-4 gap-2 mt-2">
-            {(["bike", "walking", "metro", "bus"] as const).map((m) => (
-              <button
-                type="button"
-                key={m}
-                data-ocid={`rider.mode_${m}.button`}
-                onClick={() => setMode(m)}
-                className={`p-2 rounded-xl border-2 text-center transition-all ${
-                  mode === m
-                    ? "border-orange-500 bg-orange-50"
-                    : "border-border bg-card"
-                }`}
-              >
-                <div className="text-xl">{DELIVERY_ICONS[m]}</div>
-                <p className="text-xs capitalize mt-1">{m}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
           <div className="flex items-center justify-between mb-3">
             <p className="font-semibold">Incoming Orders</p>
             {!isOnline && (
@@ -212,9 +237,16 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
                     <span className="text-sm font-semibold">
                       {order.orderId}
                     </span>
-                    <span className="text-lg">
-                      {DELIVERY_ICONS[order.deliveryType]}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      {order.deliverySpeed === "fast" && (
+                        <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-medium">
+                          ⚡ Fast
+                        </span>
+                      )}
+                      <span className="text-lg">
+                        {DELIVERY_ICONS[order.deliveryType]}
+                      </span>
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground mb-1">
                     📍 {order.pickup}
@@ -225,6 +257,10 @@ export default function RiderDashboard({ user, onOrderSelect, onNav }: Props) {
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs text-muted-foreground">
                       {order.distance} km · {order.weight} kg
+                      {order.parcelCount > 1 &&
+                        ` · ${order.parcelCount} parcels`}
+                      {order.courierSubType &&
+                        ` · ${order.courierSubType} courier`}
                     </span>
                     <span className="font-bold" style={{ color: "#FF6B00" }}>
                       ₹{order.price}

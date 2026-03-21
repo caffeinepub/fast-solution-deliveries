@@ -16,7 +16,7 @@ interface Props {
 
 export default function AuthScreen({ role, onSuccess, onBack }: Props) {
   const [tab, setTab] = useState("signup");
-  const [step, setStep] = useState<"form" | "otp">("form");
+  const [step, setStep] = useState<"form" | "otp" | "vehicle">("form");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -25,6 +25,10 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
   const [disclaimer, setDisclaimer] = useState(false);
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hasTwoWheeler, setHasTwoWheeler] = useState<boolean | null>(null);
+  const [servicePreference, setServicePreference] = useState<
+    "metro" | "walking" | "bus" | null
+  >(null);
 
   const handleSendOtp = () => {
     if (!name.trim() || !email.trim() || !phone.trim()) {
@@ -58,11 +62,43 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
       toast.error("Enter the 4-digit OTP");
       return;
     }
+    if (role === "rider") {
+      setStep("vehicle");
+      return;
+    }
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
       onSuccess({ role, name, email, phone, aadhaar, pan });
       toast.success(`Welcome, ${name}!`);
+    }, 800);
+  };
+
+  const handleVehicleConfirm = () => {
+    if (hasTwoWheeler === null) {
+      toast.error("Please answer the vehicle question");
+      return;
+    }
+    if (!hasTwoWheeler && servicePreference === null) {
+      toast.error("Please select your preferred service");
+      return;
+    }
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      onSuccess({
+        role,
+        name,
+        email,
+        phone,
+        aadhaar,
+        pan,
+        riderVehicleType: hasTwoWheeler ? "two-wheeler" : "none",
+        riderServicePreference: hasTwoWheeler
+          ? undefined
+          : (servicePreference ?? undefined),
+      });
+      toast.success(`Welcome aboard, ${name}!`);
     }, 800);
   };
 
@@ -82,6 +118,7 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
         phone,
         aadhaar: role === "rider" ? "123456789012" : undefined,
         pan: role === "rider" ? "ABCDE1234F" : undefined,
+        riderVehicleType: role === "rider" ? "two-wheeler" : undefined,
       });
     }, 800);
   };
@@ -112,7 +149,13 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
           </p>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs
+          value={tab}
+          onValueChange={(v) => {
+            setTab(v);
+            setStep("form");
+          }}
+        >
           <TabsList className="w-full mb-6">
             <TabsTrigger
               value="signup"
@@ -131,7 +174,7 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
           </TabsList>
 
           <TabsContent value="signup">
-            {step === "form" ? (
+            {step === "form" && (
               <div className="flex flex-col gap-4">
                 <div>
                   <Label>Full Name *</Label>
@@ -231,7 +274,9 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
                   Send OTP
                 </Button>
               </div>
-            ) : (
+            )}
+
+            {step === "otp" && (
               <div className="flex flex-col gap-4">
                 <p className="text-sm text-muted-foreground">
                   Enter the 4-digit OTP sent to <strong>{phone}</strong>
@@ -266,6 +311,111 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
                   Change details
                 </button>
               </div>
+            )}
+
+            {step === "vehicle" && role === "rider" && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col gap-5"
+              >
+                <div className="text-center">
+                  <div className="text-4xl mb-2">🏍️</div>
+                  <h3 className="font-bold text-lg">One more step!</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Tell us about your vehicle
+                  </p>
+                </div>
+
+                <div>
+                  <p className="font-semibold text-sm mb-3">
+                    Do you own a two-wheeler vehicle?
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHasTwoWheeler(true);
+                        setServicePreference(null);
+                      }}
+                      className={`p-4 rounded-2xl border-2 text-center transition-all ${
+                        hasTwoWheeler === true
+                          ? "border-orange-500 bg-orange-50"
+                          : "border-border bg-card hover:border-orange-300"
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">🏍️</div>
+                      <p className="font-semibold text-sm">Yes</p>
+                      <p className="text-xs text-muted-foreground">
+                        2-Wheeler Rider
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHasTwoWheeler(false)}
+                      className={`p-4 rounded-2xl border-2 text-center transition-all ${
+                        hasTwoWheeler === false
+                          ? "border-orange-500 bg-orange-50"
+                          : "border-border bg-card hover:border-orange-300"
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">🚶</div>
+                      <p className="font-semibold text-sm">No</p>
+                      <p className="text-xs text-muted-foreground">
+                        Choose a service
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {hasTwoWheeler === false && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <p className="font-semibold text-sm mb-3">
+                      Select your preferred delivery service:
+                    </p>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        { id: "metro" as const, icon: "🚇", label: "Metro" },
+                        {
+                          id: "walking" as const,
+                          icon: "🚶",
+                          label: "Walking",
+                        },
+                        { id: "bus" as const, icon: "🚌", label: "Bus" },
+                      ].map((s) => (
+                        <button
+                          type="button"
+                          key={s.id}
+                          onClick={() => setServicePreference(s.id)}
+                          className={`p-3 rounded-2xl border-2 text-center transition-all ${
+                            servicePreference === s.id
+                              ? "border-orange-500 bg-orange-50"
+                              : "border-border bg-card hover:border-orange-300"
+                          }`}
+                        >
+                          <div className="text-2xl mb-1">{s.icon}</div>
+                          <p className="font-semibold text-xs">{s.label}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                <Button
+                  data-ocid="auth.vehicle_confirm.button"
+                  onClick={handleVehicleConfirm}
+                  disabled={loading}
+                  className="w-full rounded-full text-white font-semibold py-5"
+                  style={{
+                    background: "linear-gradient(90deg, #FF6B00, #FF9500)",
+                  }}
+                >
+                  {loading ? "Setting up..." : "Complete Registration"}
+                </Button>
+              </motion.div>
             )}
           </TabsContent>
 

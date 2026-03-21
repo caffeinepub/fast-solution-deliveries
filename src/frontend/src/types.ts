@@ -19,9 +19,13 @@ export interface AppUser {
   phone: string;
   aadhaar?: string;
   pan?: string;
+  riderVehicleType?: "two-wheeler" | "none";
+  riderServicePreference?: "metro" | "walking" | "bus";
 }
 
-export type DeliveryType = "walking" | "bike" | "metro" | "bus";
+export type DeliveryType = "walking" | "bike" | "metro" | "bus" | "courier";
+export type CourierSubType = "normal" | "bulk";
+export type DeliverySpeed = "slow" | "fast";
 
 export interface BookingData {
   orderId: string;
@@ -30,9 +34,16 @@ export interface BookingData {
   drop: string;
   description: string;
   weight: number;
+  parcelCount: number;
   distance: number;
   deliveryType: DeliveryType;
+  courierSubType?: CourierSubType;
+  deliverySpeed: DeliverySpeed;
   price: number;
+  baseCharge: number;
+  weightSurcharge: number;
+  timeSurcharge: number;
+  fastCharge: number;
   status: "placed" | "assigned" | "picked" | "transit" | "delivered";
   riderName: string;
   riderPhone: string;

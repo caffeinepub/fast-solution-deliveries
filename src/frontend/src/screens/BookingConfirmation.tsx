@@ -16,6 +16,7 @@ const DELIVERY_ICONS: Record<string, string> = {
   bike: "🏍️",
   metro: "🚇",
   bus: "🚌",
+  courier: "📦",
 };
 
 export default function BookingConfirmation({
@@ -68,12 +69,38 @@ export default function BookingConfirmation({
             <Row label="Pickup" value={booking.pickup} />
             <Row label="Drop" value={booking.drop} />
             <Row label="Parcel" value={booking.description} />
+            <Row
+              label="No. of Parcels"
+              value={`${booking.parcelCount} ${booking.parcelCount === 1 ? "parcel" : "parcels"}`}
+            />
             <Row label="Weight" value={`${booking.weight} kg`} />
             <Row label="Distance" value={`${booking.distance} km`} />
             <Row
               label="Delivery Type"
-              value={`${DELIVERY_ICONS[booking.deliveryType]} ${booking.deliveryType.charAt(0).toUpperCase() + booking.deliveryType.slice(1)}`}
+              value={`${DELIVERY_ICONS[booking.deliveryType]} ${booking.deliveryType.charAt(0).toUpperCase() + booking.deliveryType.slice(1)}${
+                booking.courierSubType ? ` (${booking.courierSubType})` : ""
+              }`}
             />
+            <Row
+              label="Speed"
+              value={
+                booking.deliverySpeed === "fast"
+                  ? "⚡ Fast (+₹5)"
+                  : "🐢 Slow (Standard)"
+              }
+            />
+            {booking.weightSurcharge > 0 && (
+              <Row
+                label="Weight Surcharge"
+                value={`+₹${booking.weightSurcharge}`}
+              />
+            )}
+            {booking.timeSurcharge > 0 && (
+              <Row
+                label="Distance Surcharge"
+                value={`+₹${booking.timeSurcharge}`}
+              />
+            )}
             <div className="border-t border-border pt-3 flex justify-between font-bold">
               <span>Total Paid</span>
               <span style={{ color: "#FF6B00" }}>₹{booking.price}</span>
