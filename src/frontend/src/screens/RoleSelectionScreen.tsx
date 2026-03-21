@@ -14,10 +14,11 @@ export default function RoleSelectionScreen({ onSelect }: Props) {
         className="w-full max-w-md"
       >
         <div className="text-center mb-10">
-          <div className="text-5xl mb-4">🚀</div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Fast Solution Deliveries
-          </h1>
+          <img
+            src="/assets/uploads/1774125054011-1.png"
+            alt="Fast Solution Deliveries Logo"
+            className="w-32 h-32 object-contain mx-auto mb-2"
+          />
           <p className="text-muted-foreground mt-2">
             How would you like to use the app?
           </p>

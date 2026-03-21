@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import BottomNav from "../components/BottomNav";
@@ -83,11 +83,22 @@ const DELIVERY_TYPES: {
     icon: "📦",
     desc: "Scheduled courier service",
     range: "Any distance",
-    price: "₹10–₹20",
+    price: "₹120–₹200",
   },
 ];
 
-// Auto-detect courier sub-type based on weight per parcel and total count
+interface DropLeg {
+  id: number;
+  drop: string;
+  distance: number | null;
+  distanceResult: DistanceResult | null;
+}
+
+let _legId = 0;
+function emptyDrop(): DropLeg {
+  return { id: ++_legId, drop: "", distance: null, distanceResult: null };
+}
+
 function autoDetectCourierType(
   weight: number,
   count: number,
@@ -113,13 +124,11 @@ function autoDetectCourierType(
   };
 }
 
-// Weight surcharge only applies above 5 kg
 function calcWeightSurcharge(weight: number): number {
   if (weight <= 5) return 0;
   return Math.round((weight - 5) * 5);
 }
 
-// Time surcharge: scales with distance, max ₹10
 function calcTimeSurcharge(distance: number): number {
   if (distance <= 10) return 0;
   return Math.min(10, Math.round((distance - 10) * 0.3));
@@ -144,10 +153,25 @@ function calcBaseCharge(
       return Math.min(80, Math.max(50, 50 + distance * 0.6));
     case "courier":
       if (courierSubType === "bulk")
-        return Math.min(20, Math.max(15, 15 + distance * 0.05));
-      return Math.min(14, Math.max(10, 10 + distance * 0.04));
+        return Math.min(200, Math.max(160, 160 + distance * 0.4));
+      return Math.min(150, Math.max(120, 120 + distance * 0.3));
   }
 }
+
+const VALID_COUPONS: Record<
+  string,
+  {
+    type: "percent" | "flat";
+    value: number;
+    maxDiscount?: number;
+    condition?: string;
+  }
+> = {
+  FIRST10: { type: "percent", value: 10, maxDiscount: 50 },
+  SAVE20: { type: "flat", value: 20 },
+  FASTSHIP: { type: "flat", value: 30, condition: "fast" },
+  BULK15: { type: "percent", value: 15, condition: "bulk" },
+};
 
 interface Props {
   user: AppUser;
@@ -157,23 +181,50 @@ interface Props {
 
 export default function CustomerHome({ user, onBook, onNav }: Props) {
   const [city, setCity] = useState("");
-  const [pickup, setPickup] = useState("");
-  const [drop, setDrop] = useState("");
+  const [parcelCount, setParcelCount] = useState(1);
+  const [sharedPickup, setSharedPickup] = useState("");
+  const [drops, setDrops] = useState<DropLeg[]>([emptyDrop()]);
   const [description, setDescription] = useState("");
   const [weight, setWeight] = useState("1");
-  const [parcelCount, setParcelCount] = useState(1);
-  const [distance, setDistance] = useState<number | null>(null);
-  const [distanceResult, setDistanceResult] = useState<DistanceResult | null>(
-    null,
-  );
   const [selectedType, setSelectedType] = useState<DeliveryType | null>(null);
   const [courierSubType, setCourierSubType] =
     useState<CourierSubType>("normal");
   const [deliverySpeed, setDeliverySpeed] = useState<DeliverySpeed>("slow");
+  const [estimating, setEstimating] = useState(false);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [couponError, setCouponError] = useState("");
 
   const weightNum = Number.parseFloat(weight) || 1;
 
-  // When courier is selected, auto-detect sub-type from weight + count
+  const changeParcelCount = (newCount: number) => {
+    const clamped = Math.max(1, Math.min(50, newCount));
+    setParcelCount(clamped);
+    setDrops((prev) => {
+      if (clamped > prev.length) {
+        return [
+          ...prev,
+          ...Array.from({ length: clamped - prev.length }, emptyDrop),
+        ];
+      }
+      return prev.slice(0, clamped);
+    });
+    setSelectedType(null);
+    setAppliedCoupon(null);
+    setCouponError("");
+  };
+
+  const updateDrop = (idx: number, value: string) => {
+    setDrops((prev) =>
+      prev.map((d, i) =>
+        i === idx
+          ? { ...d, drop: value, distance: null, distanceResult: null }
+          : d,
+      ),
+    );
+    setSelectedType(null);
+  };
+
   const autoDetected =
     selectedType === "courier"
       ? autoDetectCourierType(weightNum, parcelCount)
@@ -182,39 +233,66 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
     ? autoDetected.subType
     : courierSubType;
 
-  const estimateDistance = () => {
-    if (!pickup || !drop) {
-      toast.error("Enter pickup and drop locations first");
+  const allEstimated = drops.every((d) => d.distance !== null);
+  const totalDistance = allEstimated
+    ? drops.reduce((sum, d) => sum + (d.distance ?? 0), 0)
+    : null;
+
+  // Chained route: pickup→drop1, drop1→drop2, drop2→drop3, ...
+  const estimateAllDrops = async () => {
+    if (!sharedPickup.trim()) {
+      toast.error("Enter a shared pickup location first");
       return;
     }
-    const result = estimateSmartDistance(pickup, drop);
-    setDistance(result.distance);
-    setDistanceResult(result);
+    for (let i = 0; i < drops.length; i++) {
+      if (!drops[i].drop.trim()) {
+        toast.error(`Enter drop address for Drop ${i + 1}`);
+        return;
+      }
+    }
+    setEstimating(true);
+
+    const results: DistanceResult[] = [];
+    for (let i = 0; i < drops.length; i++) {
+      const from = i === 0 ? sharedPickup : drops[i - 1].drop;
+      const to = drops[i].drop;
+      results.push(estimateSmartDistance(from, to));
+    }
+
+    setDrops((prev) =>
+      prev.map((d, i) => ({
+        ...d,
+        distance: results[i].distance,
+        distanceResult: results[i],
+      })),
+    );
+    setEstimating(false);
     setSelectedType(null);
 
-    if (result.confidence === "high") {
+    const total = results.reduce((s, r) => s + r.distance, 0);
+    const highCount = results.filter((r) => r.confidence === "high").length;
+    if (highCount === results.length) {
       toast.success(
-        `AI matched: ${result.pickupArea} → ${result.dropArea} — ${result.distance} km (road distance)`,
+        `All ${results.length} legs AI matched — total ${total} km`,
       );
-    } else if (result.confidence === "medium") {
-      toast.info(`Partial match — estimated ${result.distance} km`);
     } else {
-      toast.warning(
-        `Could not identify areas — rough estimate: ${result.distance} km`,
+      toast.info(
+        `Estimated total: ${total} km (${highCount}/${results.length} AI matched)`,
       );
     }
   };
 
   const weightSurcharge = calcWeightSurcharge(weightNum);
-  const timeSurcharge = distance !== null ? calcTimeSurcharge(distance) : 0;
+  const timeSurcharge =
+    totalDistance !== null ? calcTimeSurcharge(totalDistance) : 0;
   const fastCharge = deliverySpeed === "fast" ? 5 : 0;
 
   const singleBaseCharge =
-    selectedType && distance !== null
+    selectedType && totalDistance !== null
       ? Math.round(
           calcBaseCharge(
             selectedType,
-            distance,
+            totalDistance,
             selectedType === "courier" ? effectiveCourierSubType : undefined,
           ),
         )
@@ -222,28 +300,85 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
 
   const baseCharge =
     singleBaseCharge !== null ? singleBaseCharge * parcelCount : null;
-
-  const price =
+  const rawPrice =
     baseCharge !== null
       ? baseCharge + weightSurcharge + timeSurcharge + fastCharge
       : null;
+
+  // Coupon calculations
+  const calcDiscount = (
+    code: string,
+    priceVal: number,
+  ): { discount: number; error: string } => {
+    const upper = code.toUpperCase().trim();
+    const coupon = VALID_COUPONS[upper];
+    if (!coupon) return { discount: 0, error: "Invalid coupon code" };
+    if (coupon.condition === "fast" && deliverySpeed !== "fast")
+      return { discount: 0, error: "FASTSHIP only valid with Fast Delivery" };
+    if (coupon.condition === "bulk" && effectiveCourierSubType !== "bulk")
+      return { discount: 0, error: "BULK15 only valid with Bulk Courier" };
+    let disc =
+      coupon.type === "percent"
+        ? Math.round((priceVal * coupon.value) / 100)
+        : coupon.value;
+    if (coupon.maxDiscount) disc = Math.min(disc, coupon.maxDiscount);
+    return { discount: disc, error: "" };
+  };
+
+  const discountAmount =
+    appliedCoupon && rawPrice !== null
+      ? calcDiscount(appliedCoupon, rawPrice).discount
+      : 0;
+  const price =
+    rawPrice !== null ? Math.max(1, rawPrice - discountAmount) : null;
+
+  const handleApplyCoupon = () => {
+    if (!rawPrice) {
+      setCouponError("Calculate price first");
+      return;
+    }
+    const { discount, error } = calcDiscount(couponInput, rawPrice);
+    if (error) {
+      setCouponError(error);
+      setAppliedCoupon(null);
+    } else {
+      setAppliedCoupon(couponInput.toUpperCase().trim());
+      setCouponError("");
+      toast.success(`Coupon applied! You save ₹${discount}`);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError("");
+  };
+
+  // Route stops for display
+  const routeStops: string[] = [];
+  if (sharedPickup) routeStops.push(sharedPickup);
+  for (const d of drops) {
+    if (d.drop) routeStops.push(d.drop);
+  }
 
   const handleBook = () => {
     if (!city) {
       toast.error("Select a city");
       return;
     }
-    if (!pickup.trim()) {
-      toast.error("Enter pickup location");
+    if (!sharedPickup.trim()) {
+      toast.error("Enter a pickup location");
       return;
     }
-    if (!drop.trim()) {
-      toast.error("Enter drop location");
-      return;
-    }
-    if (distance === null) {
-      toast.error("Click AI Distance Estimate first");
-      return;
+    for (let i = 0; i < drops.length; i++) {
+      if (!drops[i].drop.trim()) {
+        toast.error(`Enter drop address for Drop ${i + 1}`);
+        return;
+      }
+      if (drops[i].distance === null) {
+        toast.error(`Estimate distance for Drop ${i + 1} first`);
+        return;
+      }
     }
     if (!selectedType) {
       toast.error("Select a delivery type");
@@ -254,12 +389,12 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
     onBook({
       orderId,
       city,
-      pickup,
-      drop,
+      pickup: sharedPickup,
+      drop: drops[drops.length - 1].drop,
       description: description || "General parcel",
       weight: weightNum,
       parcelCount,
-      distance,
+      distance: totalDistance!,
       deliveryType: selectedType,
       courierSubType:
         selectedType === "courier" ? effectiveCourierSubType : undefined,
@@ -269,23 +404,19 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
       weightSurcharge,
       timeSurcharge,
       fastCharge,
+      couponCode: appliedCoupon ?? undefined,
+      discount: discountAmount > 0 ? discountAmount : undefined,
       status: "placed",
       riderName: "Rahul Verma",
       riderPhone: "9876543210",
+      parcelLegs: drops.map((d, i) => ({
+        parcelNo: i + 1,
+        pickup: i === 0 ? sharedPickup : drops[i - 1].drop,
+        drop: d.drop,
+        distance: d.distance!,
+      })),
     });
   };
-
-  const confidenceBadge = distanceResult ? (
-    distanceResult.confidence === "high" ? (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-        ✅ AI Matched
-      </span>
-    ) : (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-        ⚠️ Estimated
-      </span>
-    )
-  ) : null;
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -307,6 +438,7 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
       </div>
 
       <div className="max-w-md mx-auto px-4 py-4 flex flex-col gap-5">
+        {/* City */}
         <div>
           <Label className="text-sm font-semibold">City</Label>
           <Select value={city} onValueChange={setCity}>
@@ -323,44 +455,187 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
           </Select>
         </div>
 
-        <div className="bg-card rounded-2xl border border-border p-4 flex flex-col gap-3">
-          <div className="flex items-start gap-3">
-            <div className="mt-2 w-3 h-3 rounded-full bg-green-500 flex-shrink-0" />
-            <div className="flex-1">
-              <Label className="text-xs text-muted-foreground">
-                PICKUP LOCATION
-              </Label>
-              <Input
-                data-ocid="home.pickup.input"
-                value={pickup}
-                onChange={(e) => setPickup(e.target.value)}
-                placeholder="e.g. Connaught Place, Karol Bagh…"
-                className="mt-1 border-0 p-0 h-auto text-sm focus-visible:ring-0 bg-transparent"
-              />
+        {/* Number of parcels */}
+        <div>
+          <Label className="text-sm font-semibold">
+            Number of Drops / Parcels
+          </Label>
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              data-ocid="home.parcel_count.secondary_button"
+              onClick={() => changeParcelCount(parcelCount - 1)}
+              className="w-10 h-10 rounded-full border-2 border-orange-400 text-orange-600 text-xl font-bold flex items-center justify-center hover:bg-orange-50 transition-colors"
+            >
+              −
+            </button>
+            <div className="flex-1 text-center">
+              <span className="text-2xl font-bold text-foreground">
+                {parcelCount}
+              </span>
+              <p className="text-xs text-muted-foreground">
+                {parcelCount === 1 ? "drop" : "drops"}
+              </p>
             </div>
+            <button
+              type="button"
+              data-ocid="home.parcel_count.primary_button"
+              onClick={() => changeParcelCount(parcelCount + 1)}
+              className="w-10 h-10 rounded-full border-2 border-orange-400 text-orange-600 text-xl font-bold flex items-center justify-center hover:bg-orange-50 transition-colors"
+            >
+              +
+            </button>
           </div>
-          <div className="ml-1.5 border-l-2 border-dashed border-muted h-4" />
-          <div className="flex items-start gap-3">
-            <div className="mt-2 w-3 h-3 rounded-full bg-red-500 flex-shrink-0" />
-            <div className="flex-1">
-              <Label className="text-xs text-muted-foreground">
-                DROP LOCATION
-              </Label>
-              <Input
-                data-ocid="home.drop.input"
-                value={drop}
-                onChange={(e) => setDrop(e.target.value)}
-                placeholder="e.g. Saket, Noida Sector 18…"
-                className="mt-1 border-0 p-0 h-auto text-sm focus-visible:ring-0 bg-transparent"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground ml-6">
-            🤖 Type area names for AI-accurate distance
-          </p>
+          {parcelCount > 1 && (
+            <p className="text-xs text-muted-foreground text-center mt-1">
+              One shared pickup → {parcelCount} sequential drops
+            </p>
+          )}
         </div>
 
-        {/* Parcel details row */}
+        {/* Shared Pickup */}
+        <div
+          className="bg-card rounded-2xl border border-border overflow-hidden"
+          style={{ borderLeft: "4px solid #22c55e" }}
+        >
+          <div
+            className="flex items-center gap-2 px-4 py-2"
+            style={{ background: "rgba(34,197,94,0.06)" }}
+          >
+            <div className="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" />
+            <span className="text-sm font-semibold text-foreground">
+              Shared Pickup Location
+            </span>
+          </div>
+          <div className="p-4">
+            <Label className="text-xs text-muted-foreground">PICKUP FROM</Label>
+            <Input
+              data-ocid="home.pickup.input"
+              value={sharedPickup}
+              onChange={(e) => {
+                setSharedPickup(e.target.value);
+                setDrops((prev) =>
+                  prev.map((d) => ({
+                    ...d,
+                    distance: null,
+                    distanceResult: null,
+                  })),
+                );
+                setSelectedType(null);
+              }}
+              placeholder="e.g. Rohini Avantika Sector 1"
+              className="mt-1 border-0 p-0 h-auto text-sm focus-visible:ring-0 bg-transparent"
+            />
+          </div>
+        </div>
+
+        {/* Drop address cards — one per parcel */}
+        <AnimatePresence initial={false}>
+          {drops.map((drop, idx) => (
+            <motion.div
+              key={drop.id}
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="bg-card rounded-2xl border border-border overflow-hidden"
+              style={{ borderLeft: "4px solid #FF6B00" }}
+            >
+              <div
+                className="flex items-center gap-2 px-4 py-2"
+                style={{ background: "rgba(255,107,0,0.06)" }}
+              >
+                <span
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                  style={{ background: "#FF6B00" }}
+                >
+                  {idx + 1}
+                </span>
+                <span className="text-sm font-semibold text-foreground">
+                  Drop {idx + 1}
+                </span>
+                {drop.distance !== null && drop.distanceResult && (
+                  <span
+                    className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full"
+                    style={{
+                      background:
+                        drop.distanceResult.confidence === "high"
+                          ? "rgba(34,197,94,0.1)"
+                          : "rgba(251,191,36,0.1)",
+                      color:
+                        drop.distanceResult.confidence === "high"
+                          ? "#16a34a"
+                          : "#b45309",
+                    }}
+                  >
+                    {drop.distanceResult.confidence === "high" ? "✅" : "⚠️"}{" "}
+                    {drop.distance} km
+                  </span>
+                )}
+              </div>
+              <div className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-2 w-3 h-3 rounded-full bg-red-500 flex-shrink-0" />
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground">
+                      DROP LOCATION
+                    </Label>
+                    <Input
+                      data-ocid={`home.drop.input.${idx + 1}`}
+                      value={drop.drop}
+                      onChange={(e) => updateDrop(idx, e.target.value)}
+                      placeholder={
+                        idx === 0
+                          ? "e.g. D1 Saket"
+                          : idx === 1
+                            ? "e.g. Noida Sector 18"
+                            : `e.g. Drop location ${idx + 1}`
+                      }
+                      className="mt-1 border-0 p-0 h-auto text-sm focus-visible:ring-0 bg-transparent"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 ml-6">
+                  Leg:{" "}
+                  {idx === 0
+                    ? sharedPickup || "Pickup"
+                    : drops[idx - 1].drop || `Drop ${idx}`}{" "}
+                  → {drop.drop || "…"}
+                </p>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+
+        {/* Route chain strip */}
+        {routeStops.length >= 2 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3"
+          >
+            <p className="text-xs font-semibold text-orange-700 mb-2">
+              🗺️ Route Chain
+            </p>
+            <div className="flex flex-wrap items-center gap-1">
+              {routeStops.map((stop, i) => (
+                <span
+                  key={stop + String(i)}
+                  className="flex items-center gap-1"
+                >
+                  <span className="text-xs font-medium text-foreground bg-white border border-orange-200 rounded-full px-2 py-0.5">
+                    {stop}
+                  </span>
+                  {i < routeStops.length - 1 && (
+                    <span className="text-orange-400 text-xs font-bold">→</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Parcel details */}
         <div className="flex gap-3">
           <div className="flex-1">
             <Label className="text-sm font-semibold">Parcel Description</Label>
@@ -387,41 +662,6 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
           </div>
         </div>
 
-        {/* Parcel / Courier quantity selector */}
-        <div>
-          <Label className="text-sm font-semibold">Number of Parcels</Label>
-          <div className="flex items-center gap-3 mt-2">
-            <button
-              type="button"
-              onClick={() => setParcelCount((c) => Math.max(1, c - 1))}
-              className="w-10 h-10 rounded-full border-2 border-orange-400 text-orange-600 text-xl font-bold flex items-center justify-center hover:bg-orange-50 transition-colors"
-            >
-              −
-            </button>
-            <div className="flex-1 text-center">
-              <span className="text-2xl font-bold text-foreground">
-                {parcelCount}
-              </span>
-              <p className="text-xs text-muted-foreground">
-                {parcelCount === 1 ? "parcel" : "parcels"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setParcelCount((c) => Math.min(50, c + 1))}
-              className="w-10 h-10 rounded-full border-2 border-orange-400 text-orange-600 text-xl font-bold flex items-center justify-center hover:bg-orange-50 transition-colors"
-            >
-              +
-            </button>
-          </div>
-          {parcelCount > 1 && (
-            <p className="text-xs text-muted-foreground text-center mt-1">
-              Total weight: {weightNum * parcelCount} kg across {parcelCount}{" "}
-              parcels
-            </p>
-          )}
-        </div>
-
         {weightNum > 5 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-xs text-amber-700">
             ⚠️ Weight surcharge applies for parcels over 5 kg: +₹
@@ -431,41 +671,62 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
 
         <Button
           data-ocid="home.estimate.button"
-          onClick={estimateDistance}
+          onClick={estimateAllDrops}
+          disabled={estimating}
           variant="outline"
           className="w-full rounded-full border-orange-300 text-orange-600 hover:bg-orange-50"
         >
           🤖 AI Distance Estimate
+          {parcelCount > 1 ? ` (${parcelCount} Drops)` : ""}
         </Button>
 
-        {distance !== null && distanceResult && (
+        {/* Total distance summary */}
+        {totalDistance !== null && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3"
           >
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-orange-700">
-                📏 {distance} km
+                📏 Total Distance: {totalDistance} km
               </span>
-              {confidenceBadge}
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                ✅ All Estimated
+              </span>
             </div>
-            {distanceResult.confidence === "high" &&
-              distanceResult.pickupArea &&
-              distanceResult.dropArea && (
+            {parcelCount > 1 && (
+              <div className="flex flex-col gap-1 mt-1">
+                {drops.map((d, i) => (
+                  <div
+                    key={d.id}
+                    className="flex justify-between text-xs text-muted-foreground"
+                  >
+                    <span>
+                      Leg {i + 1}: {i === 0 ? sharedPickup : drops[i - 1].drop}{" "}
+                      → {d.drop}
+                    </span>
+                    <span className="font-medium text-foreground ml-2">
+                      {d.distance} km
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {parcelCount === 1 &&
+              drops[0].distanceResult?.confidence === "high" &&
+              drops[0].distanceResult.pickupArea &&
+              drops[0].distanceResult.dropArea && (
                 <p className="text-xs text-green-700 mt-1">
-                  {distanceResult.pickupArea} → {distanceResult.dropArea}
+                  {drops[0].distanceResult.pickupArea} →{" "}
+                  {drops[0].distanceResult.dropArea}
                 </p>
               )}
-            {distanceResult.confidence !== "high" && (
-              <p className="text-xs text-amber-600 mt-1">
-                ⚠️ Area not fully identified — please verify distance manually
-              </p>
-            )}
           </motion.div>
         )}
 
-        {distance !== null && (
+        {/* Delivery type + speed */}
+        {totalDistance !== null && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -510,7 +771,6 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
               </div>
             </div>
 
-            {/* Courier: auto-detected type shown as info, manual override still available */}
             {selectedType === "courier" && autoDetected && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <Label className="text-sm font-semibold">Courier Type</Label>
@@ -538,12 +798,14 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
                     className="text-sm font-bold"
                     style={{ color: "#FF6B00" }}
                   >
-                    {autoDetected.subType === "bulk" ? "₹15–₹20" : "₹10–₹14"}
+                    {autoDetected.subType === "bulk"
+                      ? "₹160–₹200"
+                      : "₹120–₹150"}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 ml-1">
                   Auto-selected based on weight ({weightNum} kg) and parcel
-                  count ({parcelCount}). You can override:
+                  count ({parcelCount}). Override:
                 </p>
                 <div className="grid grid-cols-2 gap-3 mt-2">
                   {[
@@ -551,13 +813,13 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
                       id: "normal" as CourierSubType,
                       icon: "📄",
                       label: "Normal",
-                      price: "₹10–₹14",
+                      price: "₹120–₹150",
                     },
                     {
                       id: "bulk" as CourierSubType,
                       icon: "📦",
                       label: "Bulk",
-                      price: "₹15–₹20",
+                      price: "₹160–₹200",
                     },
                   ].map((ct) => (
                     <button
@@ -628,7 +890,8 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
           </motion.div>
         )}
 
-        {price !== null && selectedType && (
+        {/* Price breakdown */}
+        {rawPrice !== null && selectedType && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -676,11 +939,105 @@ export default function CustomerHome({ user, onBook, onNav }: Props) {
                   <span>₹{fastCharge}</span>
                 </div>
               )}
+              {discountAmount > 0 && appliedCoupon && (
+                <div className="flex justify-between text-green-600 font-medium">
+                  <span>Coupon ({appliedCoupon})</span>
+                  <span>−₹{discountAmount}</span>
+                </div>
+              )}
               <div className="border-t border-border pt-2 flex justify-between font-bold">
                 <span>Total</span>
                 <span style={{ color: "#FF6B00" }}>₹{price}</span>
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {/* Coupon code section */}
+        {rawPrice !== null && selectedType && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-card border border-border rounded-2xl p-4"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">🏷️</span>
+              <p className="font-semibold text-sm">Apply Coupon</p>
+            </div>
+
+            {!appliedCoupon ? (
+              <>
+                <div className="flex gap-2">
+                  <Input
+                    data-ocid="home.coupon.input"
+                    value={couponInput}
+                    onChange={(e) => {
+                      setCouponInput(e.target.value.toUpperCase());
+                      setCouponError("");
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyCoupon()}
+                    placeholder="Enter coupon code"
+                    className="flex-1 text-sm uppercase placeholder:normal-case"
+                  />
+                  <Button
+                    data-ocid="home.coupon.primary_button"
+                    onClick={handleApplyCoupon}
+                    variant="outline"
+                    className="border-orange-300 text-orange-600 hover:bg-orange-50 font-semibold"
+                  >
+                    Apply
+                  </Button>
+                </div>
+                {couponError && (
+                  <p
+                    className="text-xs text-red-500 mt-1.5"
+                    data-ocid="home.coupon.error_state"
+                  >
+                    ❌ {couponError}
+                  </p>
+                )}
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {["FIRST10", "SAVE20", "FASTSHIP", "BULK15"].map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => {
+                        setCouponInput(code);
+                        setCouponError("");
+                      }}
+                      className="text-xs border border-dashed border-orange-300 text-orange-600 px-2 py-1 rounded-full hover:bg-orange-50 transition-colors"
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Tap a code above or type your own
+                </p>
+              </>
+            ) : (
+              <div
+                className="flex items-center gap-3 p-3 rounded-xl border border-green-200 bg-green-50"
+                data-ocid="home.coupon.success_state"
+              >
+                <span className="text-xl">✅</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-green-700">
+                    {appliedCoupon} applied!
+                  </p>
+                  <p className="text-xs text-green-600">
+                    You save ₹{discountAmount}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveCoupon}
+                  className="text-xs text-muted-foreground hover:text-red-500 transition-colors underline"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
 

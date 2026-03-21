@@ -1,8 +1,13 @@
+import { MessageCircle, Phone } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import BottomNav from "../components/BottomNav";
+import CallOverlay from "../components/CallOverlay";
+import ChatPanel from "../components/ChatPanel";
+import ReviewModal from "../components/ReviewModal";
 import SimulatedMap from "../components/SimulatedMap";
-import type { AppUser, BookingData, Screen } from "../types";
+import type { AppUser, BookingData, Review, Screen } from "../types";
 
 const STATUSES = [
   { key: "placed", label: "Order Placed", desc: "Your booking is confirmed" },
@@ -26,10 +31,20 @@ interface Props {
   booking: BookingData;
   onNav: (s: Screen) => void;
   user: AppUser;
+  onReviewSubmit?: (review: Review) => void;
 }
 
-export default function OrderTracking({ booking, onNav, user: _user }: Props) {
+export default function OrderTracking({
+  booking,
+  onNav,
+  user,
+  onReviewSubmit,
+}: Props) {
   const [currentStatus, setCurrentStatus] = useState(booking.status);
+  const [showReview, setShowReview] = useState(false);
+  const [reviewDone, setReviewDone] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [showCall, setShowCall] = useState(false);
 
   useEffect(() => {
     const idx = STATUS_ORDER.indexOf(currentStatus);
@@ -42,6 +57,20 @@ export default function OrderTracking({ booking, onNav, user: _user }: Props) {
   }, [currentStatus]);
 
   const currentIdx = STATUS_ORDER.indexOf(currentStatus);
+  const isDelivered = currentStatus === "delivered";
+
+  const handleReviewSubmit = (review: Review) => {
+    onReviewSubmit?.(review);
+    setShowReview(false);
+    setReviewDone(true);
+    toast.success("Thanks for your feedback! ⭐");
+  };
+
+  const handleSkip = () => {
+    setShowReview(false);
+    setReviewDone(true);
+    toast("Review skipped");
+  };
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -64,6 +93,7 @@ export default function OrderTracking({ booking, onNav, user: _user }: Props) {
       <div className="max-w-md mx-auto px-4 py-4 flex flex-col gap-5">
         <SimulatedMap />
 
+        {/* Rider info card with Call + Message */}
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="flex items-center gap-3">
             <div
@@ -80,10 +110,28 @@ export default function OrderTracking({ booking, onNav, user: _user }: Props) {
                 {booking.riderPhone}
               </p>
             </div>
-            <div className="text-right">
-              <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium status-blink">
-                ● Live
-              </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-ocid="order_tracking.chat.open_modal_button"
+                onClick={() => setShowChat(true)}
+                className="w-10 h-10 rounded-full flex items-center justify-center border border-border bg-background hover:bg-muted transition-colors"
+                title="Message Rider"
+              >
+                <MessageCircle size={18} className="text-orange-500" />
+              </button>
+              <button
+                type="button"
+                data-ocid="order_tracking.call.primary_button"
+                onClick={() => setShowCall(true)}
+                className="w-10 h-10 rounded-full flex items-center justify-center text-white transition-colors active:scale-95"
+                style={{
+                  background: "linear-gradient(135deg, #FF6B00, #FF9500)",
+                }}
+                title="Call Rider"
+              >
+                <Phone size={18} />
+              </button>
             </div>
           </div>
         </div>
@@ -165,12 +213,65 @@ export default function OrderTracking({ booking, onNav, user: _user }: Props) {
             </span>
           </div>
         </div>
+
+        {/* Rate Rider button after delivery */}
+        {isDelivered && !reviewDone && (
+          <motion.button
+            type="button"
+            data-ocid="order_tracking.rate.primary_button"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={() => setShowReview(true)}
+            className="w-full text-white font-bold py-4 rounded-2xl text-base flex items-center justify-center gap-2 active:scale-95 transition-all"
+            style={{ background: "linear-gradient(90deg, #FF6B00, #FF9500)" }}
+          >
+            <span className="text-xl">⭐</span>
+            Rate your Rider
+          </motion.button>
+        )}
+
+        {isDelivered && reviewDone && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-3 rounded-2xl bg-green-50 border border-green-200"
+            data-ocid="order_tracking.review.success_state"
+          >
+            <p className="text-green-700 font-semibold text-sm">
+              ✅ Thanks for your feedback!
+            </p>
+          </motion.div>
+        )}
       </div>
 
       <BottomNav
         userRole="customer"
         activeScreen="order-tracking"
         onNav={onNav}
+      />
+
+      <ReviewModal
+        open={showReview}
+        orderId={booking.orderId}
+        reviewerRole="customer"
+        reviewerName={user.name}
+        targetName={booking.riderName}
+        deliveryType={booking.deliveryType}
+        onSubmit={handleReviewSubmit}
+        onSkip={handleSkip}
+      />
+
+      <ChatPanel
+        open={showChat}
+        onClose={() => setShowChat(false)}
+        otherName={booking.riderName}
+        userRole="customer"
+      />
+
+      <CallOverlay
+        open={showCall}
+        onClose={() => setShowCall(false)}
+        calleeName={booking.riderName}
       />
     </div>
   );

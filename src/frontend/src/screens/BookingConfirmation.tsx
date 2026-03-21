@@ -26,6 +26,16 @@ export default function BookingConfirmation({
   onNav,
   user: _user,
 }: Props) {
+  const hasMultiLegs = booking.parcelLegs && booking.parcelLegs.length > 1;
+
+  const routeStops: string[] = [];
+  if (hasMultiLegs && booking.parcelLegs) {
+    for (let i = 0; i < booking.parcelLegs.length; i++) {
+      if (i === 0) routeStops.push(booking.parcelLegs[i].pickup);
+      routeStops.push(booking.parcelLegs[i].drop);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background pb-24">
       <div className="max-w-md mx-auto px-4 py-8">
@@ -66,8 +76,12 @@ export default function BookingConfirmation({
           </div>
           <div className="flex flex-col gap-3 text-sm">
             <Row label="City" value={booking.city} />
-            <Row label="Pickup" value={booking.pickup} />
-            <Row label="Drop" value={booking.drop} />
+            {!hasMultiLegs && (
+              <>
+                <Row label="Pickup" value={booking.pickup} />
+                <Row label="Drop" value={booking.drop} />
+              </>
+            )}
             <Row label="Parcel" value={booking.description} />
             <Row
               label="No. of Parcels"
@@ -101,12 +115,76 @@ export default function BookingConfirmation({
                 value={`+₹${booking.timeSurcharge}`}
               />
             )}
+            {booking.discount !== undefined &&
+              booking.discount > 0 &&
+              booking.couponCode && (
+                <div className="flex justify-between text-green-600 font-medium">
+                  <span>Coupon ({booking.couponCode})</span>
+                  <span>−₹{booking.discount}</span>
+                </div>
+              )}
             <div className="border-t border-border pt-3 flex justify-between font-bold">
               <span>Total Paid</span>
               <span style={{ color: "#FF6B00" }}>₹{booking.price}</span>
             </div>
           </div>
         </motion.div>
+
+        {/* Multi-leg route section */}
+        {hasMultiLegs && booking.parcelLegs && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="bg-card border border-border rounded-2xl p-4 mb-4"
+          >
+            <p className="text-sm font-semibold mb-3">🗺️ Multi-Stop Route</p>
+            <div className="flex flex-col gap-2">
+              {booking.parcelLegs.map((leg) => (
+                <div
+                  key={leg.parcelNo}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+                    style={{ background: "#FF6B00", fontSize: "10px" }}
+                  >
+                    {leg.parcelNo}
+                  </span>
+                  <span className="text-muted-foreground">
+                    Leg {leg.parcelNo}:
+                  </span>
+                  <span className="font-medium truncate">{leg.pickup}</span>
+                  <span className="text-orange-400 font-bold">→</span>
+                  <span className="font-medium truncate">{leg.drop}</span>
+                  <span className="ml-auto text-muted-foreground flex-shrink-0">
+                    {leg.distance} km
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 pt-3 border-t border-border">
+              <p className="text-xs text-muted-foreground mb-1">Full Route</p>
+              <div className="flex flex-wrap items-center gap-1">
+                {routeStops.map((stop, i) => (
+                  <span
+                    key={stop + String(i)}
+                    className="flex items-center gap-1"
+                  >
+                    <span className="text-xs font-medium text-foreground bg-orange-50 border border-orange-200 rounded-full px-2 py-0.5">
+                      {stop}
+                    </span>
+                    {i < routeStops.length - 1 && (
+                      <span className="text-orange-400 text-xs font-bold">
+                        →
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}

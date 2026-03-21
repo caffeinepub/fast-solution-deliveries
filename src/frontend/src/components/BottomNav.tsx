@@ -21,6 +21,12 @@ const CUSTOMER_NAV: NavItem[] = [
     screen: "order-history",
     ocid: "nav.history.link",
   },
+  {
+    icon: "⭐",
+    label: "Reviews",
+    screen: "reviews",
+    ocid: "nav.reviews.link",
+  },
   { icon: "👤", label: "Profile", screen: "profile", ocid: "nav.profile.link" },
 ];
 
@@ -36,6 +42,12 @@ const RIDER_NAV: NavItem[] = [
     label: "Active",
     screen: "rider-order",
     ocid: "nav.active.link",
+  },
+  {
+    icon: "⭐",
+    label: "Reviews",
+    screen: "reviews",
+    ocid: "nav.reviews.link",
   },
   {
     icon: "💰",

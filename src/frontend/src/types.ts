@@ -8,7 +8,8 @@ export type Screen =
   | "order-history"
   | "rider-dashboard"
   | "rider-order"
-  | "profile";
+  | "profile"
+  | "reviews";
 
 export type Role = "customer" | "rider";
 
@@ -27,6 +28,13 @@ export type DeliveryType = "walking" | "bike" | "metro" | "bus" | "courier";
 export type CourierSubType = "normal" | "bulk";
 export type DeliverySpeed = "slow" | "fast";
 
+export interface ParcelLeg {
+  parcelNo: number;
+  pickup: string;
+  drop: string;
+  distance: number;
+}
+
 export interface BookingData {
   orderId: string;
   city: string;
@@ -44,7 +52,22 @@ export interface BookingData {
   weightSurcharge: number;
   timeSurcharge: number;
   fastCharge: number;
+  couponCode?: string;
+  discount?: number;
   status: "placed" | "assigned" | "picked" | "transit" | "delivered";
   riderName: string;
   riderPhone: string;
+  parcelLegs?: ParcelLeg[];
+}
+
+export interface Review {
+  id: string;
+  orderId: string;
+  reviewerRole: "customer" | "rider";
+  reviewerName: string;
+  targetName: string;
+  rating: number;
+  comment: string;
+  date: string;
+  deliveryType: string;
 }

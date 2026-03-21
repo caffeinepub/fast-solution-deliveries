@@ -6,11 +6,12 @@ import CustomerHome from "./screens/CustomerHome";
 import OrderHistory from "./screens/OrderHistory";
 import OrderTracking from "./screens/OrderTracking";
 import ProfileScreen from "./screens/ProfileScreen";
+import ReviewsScreen from "./screens/ReviewsScreen";
 import RiderDashboard from "./screens/RiderDashboard";
 import RiderOrderDetail from "./screens/RiderOrderDetail";
 import RoleSelectionScreen from "./screens/RoleSelectionScreen";
 import SplashScreen from "./screens/SplashScreen";
-import type { AppUser, BookingData, Role, Screen } from "./types";
+import type { AppUser, BookingData, Review, Role, Screen } from "./types";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("splash");
@@ -20,6 +21,7 @@ export default function App() {
   const [activeRiderOrder, setActiveRiderOrder] = useState<BookingData | null>(
     null,
   );
+  const [reviews, setReviews] = useState<Review[]>([]);
 
   const navigate = (s: Screen) => setScreen(s);
 
@@ -47,6 +49,10 @@ export default function App() {
     setUser(null);
     setBooking(null);
     navigate("role");
+  };
+
+  const handleReviewSubmit = (r: Review) => {
+    setReviews((prev) => [r, ...prev]);
   };
 
   return (
@@ -78,7 +84,12 @@ export default function App() {
         />
       )}
       {screen === "order-tracking" && booking && user && (
-        <OrderTracking booking={booking} onNav={navigate} user={user} />
+        <OrderTracking
+          booking={booking}
+          onNav={navigate}
+          user={user}
+          onReviewSubmit={handleReviewSubmit}
+        />
       )}
       {screen === "order-history" && user && (
         <OrderHistory onNav={navigate} user={user} currentBooking={booking} />
@@ -96,10 +107,14 @@ export default function App() {
           user={user}
           onBack={() => navigate("rider-dashboard")}
           onNav={navigate}
+          onReviewSubmit={handleReviewSubmit}
         />
       )}
       {screen === "profile" && user && (
         <ProfileScreen user={user} onLogout={handleLogout} onNav={navigate} />
+      )}
+      {screen === "reviews" && user && (
+        <ReviewsScreen reviews={reviews} user={user} onNav={navigate} />
       )}
     </div>
   );

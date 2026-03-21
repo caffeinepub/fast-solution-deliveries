@@ -110,18 +110,18 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
-      const mockName = role === "rider" ? "Amit Kumar" : "Priya Sharma";
+      const mockName = "Priya Sharma";
       onSuccess({
         role,
         name: mockName,
         email,
         phone,
-        aadhaar: role === "rider" ? "123456789012" : undefined,
-        pan: role === "rider" ? "ABCDE1234F" : undefined,
-        riderVehicleType: role === "rider" ? "two-wheeler" : undefined,
       });
     }, 800);
   };
+
+  // For riders: only show sign-up, no login tab
+  const isRider = role === "rider";
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-background">
@@ -140,40 +140,18 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
 
         <div className="mb-6">
           <h2 className="text-2xl font-bold">
-            {role === "customer" ? "Customer" : "Rider"} Account
+            {isRider ? "Rider" : "Customer"} Account
           </h2>
           <p className="text-muted-foreground text-sm mt-1">
-            {role === "rider"
+            {isRider
               ? "Join as a delivery partner"
               : "Start sending parcels today"}
           </p>
         </div>
 
-        <Tabs
-          value={tab}
-          onValueChange={(v) => {
-            setTab(v);
-            setStep("form");
-          }}
-        >
-          <TabsList className="w-full mb-6">
-            <TabsTrigger
-              value="signup"
-              className="flex-1"
-              data-ocid="auth.signup.tab"
-            >
-              Sign Up
-            </TabsTrigger>
-            <TabsTrigger
-              value="login"
-              className="flex-1"
-              data-ocid="auth.login.tab"
-            >
-              Log In
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="signup">
+        {isRider ? (
+          // Rider: only sign up, no tabs
+          <div>
             {step === "form" && (
               <div className="flex flex-col gap-4">
                 <div>
@@ -209,60 +187,54 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
                     maxLength={10}
                   />
                 </div>
-
-                {role === "rider" && (
-                  <>
-                    <div>
-                      <Label>Aadhaar Number *</Label>
-                      <Input
-                        data-ocid="auth.aadhaar.input"
-                        value={aadhaar}
-                        onChange={(e) =>
-                          setAadhaar(e.target.value.replace(/\D/g, ""))
-                        }
-                        placeholder="12-digit Aadhaar number"
-                        className="mt-1"
-                        maxLength={12}
-                      />
-                    </div>
-                    <div>
-                      <Label>PAN Number *</Label>
-                      <Input
-                        data-ocid="auth.pan.input"
-                        value={pan}
-                        onChange={(e) => setPan(e.target.value.toUpperCase())}
-                        placeholder="10-character PAN (e.g. ABCDE1234F)"
-                        className="mt-1"
-                        maxLength={10}
-                      />
-                    </div>
-                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-                      <p className="text-xs text-orange-800 font-medium mb-3">
-                        ⚠️ Rider Disclaimer
-                      </p>
-                      <p className="text-xs text-orange-700 mb-3">
-                        I understand that I operate as an independent service
-                        provider. Fast Solution Deliveries provides no
-                        insurance, accident claims, or employment benefits.
-                      </p>
-                      <div className="flex items-start gap-3">
-                        <Checkbox
-                          id="disclaimer"
-                          data-ocid="auth.disclaimer.checkbox"
-                          checked={disclaimer}
-                          onCheckedChange={(c) => setDisclaimer(c === true)}
-                        />
-                        <Label
-                          htmlFor="disclaimer"
-                          className="text-xs text-orange-800 cursor-pointer"
-                        >
-                          I have read and agree to the above disclaimer
-                        </Label>
-                      </div>
-                    </div>
-                  </>
-                )}
-
+                <div>
+                  <Label>Aadhaar Number *</Label>
+                  <Input
+                    data-ocid="auth.aadhaar.input"
+                    value={aadhaar}
+                    onChange={(e) =>
+                      setAadhaar(e.target.value.replace(/\D/g, ""))
+                    }
+                    placeholder="12-digit Aadhaar number"
+                    className="mt-1"
+                    maxLength={12}
+                  />
+                </div>
+                <div>
+                  <Label>PAN Number *</Label>
+                  <Input
+                    data-ocid="auth.pan.input"
+                    value={pan}
+                    onChange={(e) => setPan(e.target.value.toUpperCase())}
+                    placeholder="10-character PAN (e.g. ABCDE1234F)"
+                    className="mt-1"
+                    maxLength={10}
+                  />
+                </div>
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                  <p className="text-xs text-orange-800 font-medium mb-3">
+                    ⚠️ Rider Disclaimer
+                  </p>
+                  <p className="text-xs text-orange-700 mb-3">
+                    I understand that I operate as an independent service
+                    provider. Fast Solution Deliveries provides no insurance,
+                    accident claims, or employment benefits.
+                  </p>
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="disclaimer"
+                      data-ocid="auth.disclaimer.checkbox"
+                      checked={disclaimer}
+                      onCheckedChange={(c) => setDisclaimer(c === true)}
+                    />
+                    <Label
+                      htmlFor="disclaimer"
+                      className="text-xs text-orange-800 cursor-pointer"
+                    >
+                      I have read and agree to the above disclaimer
+                    </Label>
+                  </div>
+                </div>
                 <Button
                   data-ocid="auth.send_otp.button"
                   onClick={handleSendOtp}
@@ -313,7 +285,7 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
               </div>
             )}
 
-            {step === "vehicle" && role === "rider" && (
+            {step === "vehicle" && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -417,47 +389,162 @@ export default function AuthScreen({ role, onSuccess, onBack }: Props) {
                 </Button>
               </motion.div>
             )}
-          </TabsContent>
-
-          <TabsContent value="login">
-            <div className="flex flex-col gap-4">
-              <div>
-                <Label>Email Address</Label>
-                <Input
-                  data-ocid="auth.login_email.input"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label>Phone Number</Label>
-                <Input
-                  data-ocid="auth.login_phone.input"
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="10-digit mobile number"
-                  className="mt-1"
-                  maxLength={10}
-                />
-              </div>
-              <Button
-                data-ocid="auth.login.button"
-                onClick={handleLogin}
-                disabled={loading}
-                className="w-full rounded-full text-white font-semibold py-5 mt-2"
-                style={{
-                  background: "linear-gradient(90deg, #FF6B00, #FF9500)",
-                }}
+          </div>
+        ) : (
+          // Customer: show both sign up and login tabs
+          <Tabs
+            value={tab}
+            onValueChange={(v) => {
+              setTab(v);
+              setStep("form");
+            }}
+          >
+            <TabsList className="w-full mb-6">
+              <TabsTrigger
+                value="signup"
+                className="flex-1"
+                data-ocid="auth.signup.tab"
               >
-                {loading ? "Logging in..." : "Log In"}
-              </Button>
-            </div>
-          </TabsContent>
-        </Tabs>
+                Sign Up
+              </TabsTrigger>
+              <TabsTrigger
+                value="login"
+                className="flex-1"
+                data-ocid="auth.login.tab"
+              >
+                Log In
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="signup">
+              {step === "form" && (
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <Label>Full Name *</Label>
+                    <Input
+                      data-ocid="auth.name.input"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Enter your full name"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label>Email Address *</Label>
+                    <Input
+                      data-ocid="auth.email.input"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label>Phone Number *</Label>
+                    <Input
+                      data-ocid="auth.phone.input"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="10-digit mobile number"
+                      className="mt-1"
+                      maxLength={10}
+                    />
+                  </div>
+                  <Button
+                    data-ocid="auth.send_otp.button"
+                    onClick={handleSendOtp}
+                    className="w-full rounded-full text-white font-semibold py-5 mt-2"
+                    style={{
+                      background: "linear-gradient(90deg, #FF6B00, #FF9500)",
+                    }}
+                  >
+                    Send OTP
+                  </Button>
+                </div>
+              )}
+
+              {step === "otp" && (
+                <div className="flex flex-col gap-4">
+                  <p className="text-sm text-muted-foreground">
+                    Enter the 4-digit OTP sent to <strong>{phone}</strong>
+                  </p>
+                  <div>
+                    <Label>OTP Code</Label>
+                    <Input
+                      data-ocid="auth.otp.input"
+                      value={otp}
+                      onChange={(e) =>
+                        setOtp(e.target.value.replace(/\D/g, ""))
+                      }
+                      placeholder="4-digit OTP"
+                      className="mt-1 text-center text-2xl tracking-widest"
+                      maxLength={4}
+                    />
+                  </div>
+                  <Button
+                    data-ocid="auth.verify_otp.button"
+                    onClick={handleVerifyOtp}
+                    disabled={loading}
+                    className="w-full rounded-full text-white font-semibold py-5"
+                    style={{
+                      background: "linear-gradient(90deg, #FF6B00, #FF9500)",
+                    }}
+                  >
+                    {loading ? "Verifying..." : "Verify & Continue"}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setStep("form")}
+                    className="text-sm text-muted-foreground underline text-center"
+                  >
+                    Change details
+                  </button>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="login">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <Label>Email Address</Label>
+                  <Input
+                    data-ocid="auth.login_email.input"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Phone Number</Label>
+                  <Input
+                    data-ocid="auth.login_phone.input"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="10-digit mobile number"
+                    className="mt-1"
+                    maxLength={10}
+                  />
+                </div>
+                <Button
+                  data-ocid="auth.login.button"
+                  onClick={handleLogin}
+                  disabled={loading}
+                  className="w-full rounded-full text-white font-semibold py-5 mt-2"
+                  style={{
+                    background: "linear-gradient(90deg, #FF6B00, #FF9500)",
+                  }}
+                >
+                  {loading ? "Logging in..." : "Log In"}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+        )}
       </motion.div>
     </div>
   );
