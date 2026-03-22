@@ -23,6 +23,7 @@ const MOCK_ORDERS: BookingData[] = [
     timeSurcharge: 0,
     fastCharge: 0,
     status: "delivered",
+    paymentStatus: "paid",
     riderName: "Rahul Verma",
     riderPhone: "9876543210",
   },
@@ -43,6 +44,7 @@ const MOCK_ORDERS: BookingData[] = [
     timeSurcharge: 0,
     fastCharge: 5,
     status: "transit",
+    paymentStatus: "pending",
     riderName: "Sunita Devi",
     riderPhone: "9812345678",
   },
@@ -63,6 +65,7 @@ const MOCK_ORDERS: BookingData[] = [
     timeSurcharge: 0,
     fastCharge: 0,
     status: "delivered",
+    paymentStatus: "paid",
     riderName: "Mohan Singh",
     riderPhone: "9765432109",
   },
@@ -83,6 +86,7 @@ const MOCK_ORDERS: BookingData[] = [
     timeSurcharge: 5,
     fastCharge: 0,
     status: "delivered",
+    paymentStatus: "paid",
     riderName: "Priya Yadav",
     riderPhone: "9654321098",
   },
@@ -187,11 +191,25 @@ export default function OrderHistory({
                       {order.city}
                     </p>
                   </div>
-                  <Badge
-                    className={`text-xs font-medium border-0 ${STATUS_STYLES[order.status]}`}
-                  >
-                    {STATUS_LABELS[order.status]}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge
+                      className={`text-xs font-medium border-0 ${STATUS_STYLES[order.status]}`}
+                    >
+                      {STATUS_LABELS[order.status]}
+                    </Badge>
+                    {/* Payment status badge */}
+                    <span
+                      className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        order.paymentStatus === "paid"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-red-100 text-red-600"
+                      }`}
+                    >
+                      {order.paymentStatus === "paid"
+                        ? "✅ Paid"
+                        : "⏳ Payment Pending"}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                   <span className="text-green-500">●</span>
@@ -210,6 +228,11 @@ export default function OrderHistory({
                     ₹{order.price}
                   </span>
                 </div>
+                {order.txnId && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Txn ID: <span className="font-mono">{order.txnId}</span>
+                  </p>
+                )}
               </motion.div>
             ))}
           </div>

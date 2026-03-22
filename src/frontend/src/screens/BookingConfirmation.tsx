@@ -57,6 +57,20 @@ export default function BookingConfirmation({
           <p className="text-muted-foreground mt-1">
             Your parcel is on its way
           </p>
+          {/* Payment status badge */}
+          <div className="mt-3 flex justify-center">
+            <span
+              className={`text-sm font-semibold px-4 py-1.5 rounded-full ${
+                booking.paymentStatus === "paid"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-600"
+              }`}
+            >
+              {booking.paymentStatus === "paid"
+                ? "✅ Payment Confirmed"
+                : "⏳ Payment Pending"}
+            </span>
+          </div>
         </motion.div>
 
         <motion.div
@@ -127,6 +141,12 @@ export default function BookingConfirmation({
               <span>Total Paid</span>
               <span style={{ color: "#FF6B00" }}>₹{booking.price}</span>
             </div>
+            {booking.txnId && (
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Txn ID</span>
+                <span className="font-mono">{booking.txnId}</span>
+              </div>
+            )}
           </div>
         </motion.div>
 

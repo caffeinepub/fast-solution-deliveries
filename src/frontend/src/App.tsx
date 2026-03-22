@@ -37,11 +37,14 @@ export default function App() {
   };
 
   const handleBookingConfirm = (b: BookingData) => {
-    setBooking(b);
+    setBooking({ ...b, paymentStatus: "pending" });
     navigate("payment");
   };
 
-  const handlePaymentDone = () => {
+  const handlePaymentDone = (txnId: string) => {
+    if (booking) {
+      setBooking({ ...booking, paymentStatus: "paid", txnId });
+    }
     navigate("booking-confirm");
   };
 

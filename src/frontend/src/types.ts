@@ -56,6 +56,8 @@ export interface BookingData {
   couponCode?: string;
   discount?: number;
   status: "placed" | "assigned" | "picked" | "transit" | "delivered";
+  paymentStatus?: "pending" | "paid";
+  txnId?: string;
   riderName: string;
   riderPhone: string;
   parcelLegs?: ParcelLeg[];
